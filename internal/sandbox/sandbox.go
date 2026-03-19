@@ -8,8 +8,8 @@ const (
 	CREATED SandboxState = iota
 	STARTING
 	RUNNING
-	EXITED
-	FAILED
+	EXITED // process ran and finished (regardless of success/failure)
+	FAILED // runtime could not execute the process properly
 	CLEANED
 )
 
@@ -21,10 +21,10 @@ type ResourceSpec struct {
 	TimeoutSec int
 }
 
-// Sandbox represents a unit of isolated workload execution along with its
-// lifecycle state and associated metadata.
+// Sandbox represents a unit of isolated workload execution along with its lifecycle state and associated metadata.
 type Sandbox struct {
 	ID         string
+	PID        int
 	State      SandboxState
 	Command    string
 	Args       []string
