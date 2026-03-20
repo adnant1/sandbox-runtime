@@ -61,6 +61,11 @@ func Run(args []string) error {
 		return fmt.Errorf("init: failed to mount /proc: %w", err)
 	}
 
+	// Hostname isolation
+	if err := syscall.Sethostname([]byte(sandboxID)); err != nil {
+		return fmt.Errorf("init: failed to set hostname: %w", err)
+	}
+
 	// Resolve the command ourselves, assuming our filesystem is correct
 	binary := cmd
 	if !strings.HasPrefix(cmd, "/") {
