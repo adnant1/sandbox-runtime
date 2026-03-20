@@ -3,8 +3,8 @@ package initproc
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -55,10 +55,11 @@ func Run(args []string) error {
 		return fmt.Errorf("init: failed to remove old root directory: %w", err)
 	}
 
-	binary, err := exec.LookPath(cmd)
-	if err != nil {
-		return fmt.Errorf("init: failed to find command %q: %w", cmd, err)
+	// Resolve the command ourselves, assuming our filesystem is correct
+	binary := cmd
+	if !strings.HasPrefix(cmd, "/") {
+		binary = "/bin/" + cmd
 	}
 
-	return syscall.Exec(binary, append([]string{cmd}, cmdArgs...), os.Environ())
+	return syscall.Exec(binary, append([]string{cmd}, cmdArgs...), []string{"PATH=/bin"})
 }

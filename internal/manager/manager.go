@@ -59,6 +59,22 @@ func (m *Manager) CreateSandbox(req CreateSandboxRequest) (*sandbox.Sandbox, err
 	if _, err := os.Stat(req.BundlePath); err != nil {
 		return nil, fmt.Errorf("bundle path does not exist: %w", err)
 	}
+	absBundlePath, err := filepath.Abs(req.BundlePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve absolute bundle path: %w", err)
+	}
+
+	rootFSPath := filepath.Join(absBundlePath, "rootfs")
+	info, err := os.Stat(rootFSPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("rootfs does not exist at path: %s", rootFSPath)
+		}
+		return nil, fmt.Errorf("failed to validate rootfs path: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("rootfs path exists but is not a directory: %s", rootFSPath)
+	}
 
 	id, err := m.generateSandboxID()
 	if err != nil {
@@ -66,13 +82,9 @@ func (m *Manager) CreateSandbox(req CreateSandboxRequest) (*sandbox.Sandbox, err
 	}
 	now := time.Now()
 	sandboxDir := filepath.Join(m.cfg.RootDir, "sandboxes", id)
-	rootFSPath := filepath.Join(sandboxDir, "rootfs")
 	logPath := filepath.Join(sandboxDir, "log.txt")
 	if err := os.MkdirAll(sandboxDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create sandbox directory: %w", err)
-	}
-	if err := os.MkdirAll(rootFSPath, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create rootfs directory: %w", err)
 	}
 	sb := &sandbox.Sandbox{
 		ID:         id,
@@ -81,7 +93,7 @@ func (m *Manager) CreateSandbox(req CreateSandboxRequest) (*sandbox.Sandbox, err
 		Args:       req.Args,
 		RootFSPath: rootFSPath,
 		LogPath:    logPath,
-		BundlePath: req.BundlePath,
+		BundlePath: absBundlePath,
 		CreatedAt:  now,
 		ExitCode:   -1,
 	}
