@@ -68,8 +68,11 @@ func (m *Manager) CreateSandbox(req CreateSandboxRequest) (*sandbox.Sandbox, err
 	sandboxDir := filepath.Join(m.cfg.RootDir, "sandboxes", id)
 	rootFSPath := filepath.Join(sandboxDir, "rootfs")
 	logPath := filepath.Join(sandboxDir, "log.txt")
+	if err := os.MkdirAll(sandboxDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create sandbox directory: %w", err)
+	}
 	if err := os.MkdirAll(rootFSPath, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create sandbox directories: %w", err)
+		return nil, fmt.Errorf("failed to create rootfs directory: %w", err)
 	}
 	sb := &sandbox.Sandbox{
 		ID:         id,
@@ -157,7 +160,37 @@ func (m *Manager) StartSandbox(id string) (*sandbox.Sandbox, error) {
 		return nil, fmt.Errorf("sandbox %q command is empty", id)
 	}
 
-	// Prepare host-side resources before process creation
+	// Ensure rootfs is valid and ready, then setup the sandbox log file for stdout/stderr
+	if sb.RootFSPath == "" {
+		sb.State = sandbox.FAILED
+		sb.Err = "rootfs path is empty"
+		if updateErr := m.store.Update(sb); updateErr != nil {
+			return nil, fmt.Errorf("rootfs path is empty; additionally failed to persist FAILED state: %v", updateErr)
+		}
+		return nil, fmt.Errorf("rootfs path for sandbox %q is empty", id)
+	}
+	info, err := os.Stat(sb.RootFSPath)
+	if err != nil {
+		sb.State = sandbox.FAILED
+		if os.IsNotExist(err) {
+			sb.Err = fmt.Sprintf("rootfs path does not exist: %v", err)
+		} else {
+			sb.Err = fmt.Sprintf("failed to validate rootfs path: %v", err)
+		}
+		if updateErr := m.store.Update(sb); updateErr != nil {
+			return nil, fmt.Errorf("failed to validate rootfs path: %w; additionally failed to persist FAILED state: %v", err, updateErr)
+		}
+		return nil, fmt.Errorf("failed to validate rootfs path for sandbox %q: %w", id, err)
+	}
+	if !info.IsDir() {
+		sb.State = sandbox.FAILED
+		sb.Err = "rootfs path exists but is not a directory"
+		if updateErr := m.store.Update(sb); updateErr != nil {
+			return nil, fmt.Errorf("rootfs path is not a directory; additionally failed to persist FAILED state: %v", updateErr)
+		}
+		return nil, fmt.Errorf("rootfs path for sandbox %q is not a directory", id)
+	}
+
 	logFile, err := os.OpenFile(sb.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		sb.State = sandbox.FAILED
@@ -168,8 +201,17 @@ func (m *Manager) StartSandbox(id string) (*sandbox.Sandbox, error) {
 		return nil, fmt.Errorf("open log file for sandbox %q: %w", id, err)
 	}
 
-	// Build and configure exec.Cmd from the sandbox spec and start the process
-	cmd := exec.Command(sb.Command, sb.Args...)
+	// Build and configure exec.Cmd from the sandbox spec and launch the bootstrap process
+	// so the child can perform namespace + filesystem setup before execing the workload.
+	cmd := exec.Command(
+		"/proc/self/exe",
+		append([]string{
+			"init",
+			sb.ID,
+			sb.RootFSPath,
+			sb.Command,
+		}, sb.Args...)...,
+	)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Dir = sb.BundlePath
