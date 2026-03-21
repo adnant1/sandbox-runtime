@@ -109,8 +109,8 @@ func (m *Manager) CreateSandbox(req CreateSandboxRequest) (*sandbox.Sandbox, err
 	finalRes := cfg.Resources
 	if req.Command != "" {
 		finalCmd = req.Command
-	}
-	if len(req.Args) > 0 {
+		finalArgs = req.Args // Both command + args must be overridden together
+	} else if len(req.Args) > 0 {
 		finalArgs = req.Args
 	}
 	if req.Resources != nil {
