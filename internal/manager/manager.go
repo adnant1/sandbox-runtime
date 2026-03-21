@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sandbox-runtime/internal/cgroups"
 	"sandbox-runtime/internal/config"
 	"sandbox-runtime/internal/namespaces"
 	"sandbox-runtime/internal/sandbox"
@@ -28,13 +29,17 @@ type CreateSandboxRequest struct {
 type Manager struct {
 	store *state.StateStore
 	ns    *namespaces.NamespaceManager
+	cg    *cgroups.ResourceManager
 	cfg   config.Config
 }
 
 // New initializes and returns a new Manager with the given StateStore
-func New(store *state.StateStore, cfg config.Config) *Manager {
+func New(store *state.StateStore, cg *cgroups.ResourceManager, cfg config.Config) *Manager {
 	if store == nil {
 		panic("manager: nil state store")
+	}
+	if cg == nil {
+		panic("manager: nil resource manager")
 	}
 	if cfg.RootDir == "" {
 		panic("manager: root dir cannot be empty")
@@ -46,6 +51,7 @@ func New(store *state.StateStore, cfg config.Config) *Manager {
 	return &Manager{
 		store: store,
 		ns:    namespaces.New(),
+		cg:    cg,
 		cfg:   cfg,
 	}
 }
@@ -190,6 +196,14 @@ func (m *Manager) StartSandbox(id string) (*sandbox.Sandbox, error) {
 		return m.failSandbox(sb, fmt.Sprintf("failed to open log file: %v", err), err, "open log file for sandbox %q: %w", nil)
 	}
 
+	// Build and configure the cgroup for the sandbox
+	if err := m.cg.Create(id); err != nil {
+		return m.failSandbox(sb, fmt.Sprintf("failed to create cgroup: %v", err), err, "create cgroup for sandbox %q: %w", nil)
+	}
+	if err := m.cg.ApplyLimits(id, sb.Resources); err != nil {
+		return m.failSandbox(sb, fmt.Sprintf("failed to apply cgroup limits: %v", err), err, "apply cgroup limits for sandbox %q: %w", func() { _ = m.cg.Delete(id) })
+	}
+
 	// Build and configure exec.Cmd from the sandbox spec and launch the bootstrap process
 	// so the child can perform namespace + filesystem setup before execing the workload.
 	cmd := exec.Command(
@@ -214,8 +228,26 @@ func (m *Manager) StartSandbox(id string) (*sandbox.Sandbox, error) {
 			err,
 			"start sandbox %q: %w",
 			func() { _ = logFile.Close() },
+			func() { _ = m.cg.Delete(id) },
 		)
 	}
+
+	// If attaching the process to the cgroup fails this results in a ungoverned process
+	if err := m.cg.AddProcess(id, cmd.Process.Pid); err != nil {
+		return m.failSandbox(
+			sb,
+			fmt.Sprintf("failed to attach process to cgroup: %v", err),
+			err,
+			"attach process to cgroup for sandbox %q: %w",
+			func() {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+			},
+			func() { _ = logFile.Close() },
+			func() { _ = m.cg.Delete(id) },
+		)
+	}
+
 	sb.PID = cmd.Process.Pid
 	sb.State = sandbox.RUNNING
 	sb.StartedAt = time.Now()
@@ -280,10 +312,12 @@ func (m *Manager) failSandbox(
 	sandboxErr string,
 	cause error,
 	userFmt string,
-	cleanup func(),
+	cleanup ...func(),
 ) (*sandbox.Sandbox, error) {
-	if cleanup != nil {
-		cleanup()
+	for _, fn := range cleanup {
+		if fn != nil {
+			fn()
+		}
 	}
 
 	sb.State = sandbox.FAILED

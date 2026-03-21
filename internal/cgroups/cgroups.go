@@ -41,6 +41,23 @@ func (rm *ResourceManager) Create(id string) error {
 		return fmt.Errorf("failed to create base cgroup path: %w", err)
 	}
 
+	// Ensure the required controllers are enabled
+	subtreePath := filepath.Join(rm.basePath, "cgroup.subtree_control")
+	data, err := os.ReadFile(subtreePath)
+	if err != nil {
+		return fmt.Errorf("read cgroup.subtree_control: %w", err)
+	}
+	curr_ctrls := string(data)
+	req_ctrls := []string{"+cpu", "+memory", "+pids"}
+	// Only write missing controllers
+	for _, ctrl := range req_ctrls {
+		if !strings.Contains(curr_ctrls, ctrl) {
+			if err := os.WriteFile(subtreePath, []byte(ctrl), 0o644); err != nil {
+				return fmt.Errorf("enable controller %s: %w", ctrl, err)
+			}
+		}
+	}
+
 	cgroupPath := rm.sandboxPath(id)
 	if err := os.MkdirAll(cgroupPath, 0o755); err != nil {
 		if os.IsExist(err) {

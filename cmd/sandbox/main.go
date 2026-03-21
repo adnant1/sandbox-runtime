@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sandbox-runtime/internal/cgroups"
 	"sandbox-runtime/internal/cli"
 	"sandbox-runtime/internal/config"
 	"sandbox-runtime/internal/initproc"
@@ -43,7 +44,8 @@ func main() {
 		RootDir: absRootDir,
 	}
 	store := state.New()
-	mgr := manager.New(store, cfg)
+	cg := cgroups.New("/sys/fs/cgroup")
+	mgr := manager.New(store, cg, cfg)
 	cli := cli.New(mgr)
 	cli.Run(os.Args[1:])
 }
