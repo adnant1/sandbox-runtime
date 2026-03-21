@@ -50,8 +50,18 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-	sig := <-sigCh
-	fmt.Println("received signal:", sig)
+	select {
+	case sig := <-sigCh:
+		fmt.Println("received signal:", sig)
+	case <-server.ShutdownCh:
+		fmt.Println("received shutdown request")
+	}
+
+	// Cleanup sandboxes
+	sandboxes, _ := mgr.ListSandboxes()
+	for _, sb := range sandboxes {
+		_, _ = mgr.StopSandbox(sb.ID)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

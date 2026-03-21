@@ -19,6 +19,7 @@ type Server struct {
 	mgr        *manager.Manager
 	httpServer *http.Server
 	socketPath string
+	ShutdownCh chan struct{}
 
 	Debug bool // flag to expose internal error messages in this mode
 }
@@ -28,6 +29,7 @@ func New(mgr *manager.Manager, socketPath string) *Server {
 	s := &Server{
 		mgr:        mgr,
 		socketPath: socketPath,
+		ShutdownCh: make(chan struct{}),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sandboxes", s.handleSandboxes)

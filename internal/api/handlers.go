@@ -1,11 +1,9 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // handleSandboxes handles:
@@ -121,18 +119,8 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 		"status": "shutting down",
 	})
 
-	// Shutdown asynchronously
+	// OS Signal shutdown
 	go func() {
-		// Stop all sandboxes
-		sandboxes, _ := s.mgr.ListSandboxes()
-		for _, sb := range sandboxes {
-			_, _ = s.mgr.StopSandbox(sb.ID)
-		}
-
-		// Graceful server shutdown
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		_ = s.Shutdown(ctx)
+		close(s.ShutdownCh)
 	}()
 }
