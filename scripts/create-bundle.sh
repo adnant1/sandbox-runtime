@@ -12,6 +12,7 @@ fi
 
 BUNDLE_PATH="$1"
 ROOTFS_PATH="$BUNDLE_PATH/rootfs"
+CONFIG_PATH="$BUNDLE_PATH/config.json"
 
 echo "[+] Creating bundle at: $BUNDLE_PATH"
 
@@ -46,12 +47,29 @@ for app in $APPLET_LIST; do
   fi
 done
 
+echo "[+] Creating config.json"
+
+cat > "$CONFIG_PATH" <<EOF
+{
+  "command": "ls",
+  "args": ["-l"],
+  "resources": {
+    "cpu": 50,
+    "memoryMB": 100,
+    "pids": 64
+  }
+}
+EOF
+
+echo "[+] config.json created"
+
 echo "[+] Bundle created successfully!"
 echo ""
 
 # Helpful structure output
 echo "Structure:"
 echo "  $BUNDLE_PATH/"
+echo "    ├── config.json"
 echo "    └── rootfs/"
 echo "        ├── bin/"
 echo "        │   ├── busybox"
