@@ -1,6 +1,8 @@
 package sandbox
 
-import "time"
+import (
+	"time"
+)
 
 type SandboxState int
 
@@ -12,6 +14,24 @@ const (
 	FAILED // runtime could not execute the process properly
 	CLEANED
 )
+
+func (s SandboxState) String() string {
+	switch s {
+	case CREATED:
+		return "CREATED"
+	case STARTING:
+		return "STARTING"
+	case RUNNING:
+		return "RUNNING"
+	case EXITED:
+		return "EXITED"
+	case FAILED:
+		return "FAILED"
+	case CLEANED:
+		return "CLEANED"
+	}
+	return ""
+}
 
 // ResourceSpec represents the hardware resources allocated for its
 // associated Sandbox

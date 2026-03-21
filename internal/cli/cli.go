@@ -69,7 +69,7 @@ func (c *CLI) runCommand(args []string) {
 		return
 	}
 
-	fmt.Printf("started sandbox: id=%s pid=%d state=%v\n", sb.ID, sb.PID, sb.State)
+	fmt.Printf("started sandbox: id=%s pid=%d state=%s\n", sb.ID, sb.PID, sb.State.String())
 }
 
 func (c *CLI) listCommand(args []string) {
@@ -95,7 +95,7 @@ func (c *CLI) inspectCommand(args []string) {
 		fmt.Println("error:", err)
 		return
 	}
-	fmt.Printf("ID: %s\nState: %v\n", sb.ID, sb.State)
+	fmt.Printf("ID: %s\nState: %s\n", sb.ID, sb.State.String())
 }
 
 func (c *CLI) stopCommand(args []string) {
