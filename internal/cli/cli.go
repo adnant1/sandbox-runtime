@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"flag"
 	"fmt"
 	"sandbox-runtime/internal/manager"
+	"sandbox-runtime/internal/sandbox"
 )
 
 func printUsage() {
@@ -48,18 +50,48 @@ func (c *CLI) Run(args []string) {
 }
 
 func (c *CLI) runCommand(args []string) {
-	if len(args) < 2 {
-		fmt.Println("usage: sandbox run <bundlePath> <command> [args...]")
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+
+	var mem int
+	var cpu int
+	var pids int
+	fs.IntVar(&mem, "memory", 0, "memory limit in MB")
+	fs.IntVar(&cpu, "cpu", 0, "cpu percentage (1-100)")
+	fs.IntVar(&pids, "pids", 0, "max number of processes")
+	if err := fs.Parse(args); err != nil {
+		fmt.Println("error parsing flags:", err)
 		return
 	}
 
-	bundlePath := args[0]
-	cmd := args[1]
-	cmdArgs := args[2:]
+	remaining := fs.Args()
+	if len(remaining) < 1 {
+		fmt.Println("usage: sandbox run <bundlePath> [command] [args...] [--memory=N] [--cpu=N] [--pids=N]")
+		return
+	}
+	bundlePath := remaining[0]
+
+	// Optional override
+	var cmd string
+	var cmdArgs []string
+	if len(remaining) > 1 {
+		cmd = remaining[1]
+		cmdArgs = remaining[2:]
+	}
+
+	var res *sandbox.ResourceSpec
+	if mem > 0 || cpu > 0 || pids > 0 {
+		res = &sandbox.ResourceSpec{
+			MemoryMB: mem,
+			CPU:      cpu,
+			Pids:     pids,
+		}
+	}
+
 	sb, err := c.mgr.CreateSandbox(manager.CreateSandboxRequest{
 		BundlePath: bundlePath,
 		Command:    cmd,
 		Args:       cmdArgs,
+		Resources:  res,
 	})
 	if err != nil {
 		fmt.Println("error creating sandbox:", err)

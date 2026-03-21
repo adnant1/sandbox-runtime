@@ -2,6 +2,7 @@ package manager
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -21,8 +22,17 @@ var ErrInvalidStateTransition = errors.New("invalid sandbox state transition")
 
 type CreateSandboxRequest struct {
 	BundlePath string
-	Command    string
-	Args       []string
+
+	// Optional overrides
+	Command   string
+	Args      []string
+	Resources *sandbox.ResourceSpec
+}
+
+type BundleConfig struct {
+	Command   string               `json:"command"`
+	Args      []string             `json:"args"`
+	Resources sandbox.ResourceSpec `json:"resources"`
 }
 
 // Manager coordinates sandbox lifecycle operations and enforces runtime invariants.
@@ -82,6 +92,51 @@ func (m *Manager) CreateSandbox(req CreateSandboxRequest) (*sandbox.Sandbox, err
 		return nil, fmt.Errorf("rootfs path exists but is not a directory: %s", rootFSPath)
 	}
 
+	// Load bundle config
+	cfgPath := filepath.Join(absBundlePath, "config.json")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read bundle config: %w", err)
+	}
+	var cfg BundleConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse bundle config: %w", err)
+	}
+
+	// Merge bundle config + request overrides
+	finalCmd := cfg.Command
+	finalArgs := cfg.Args
+	finalRes := cfg.Resources
+	if req.Command != "" {
+		finalCmd = req.Command
+	}
+	if len(req.Args) > 0 {
+		finalArgs = req.Args
+	}
+	if req.Resources != nil {
+		if req.Resources.CPU > 0 {
+			finalRes.CPU = req.Resources.CPU
+		}
+		if req.Resources.MemoryMB > 0 {
+			finalRes.MemoryMB = req.Resources.MemoryMB
+		}
+		if req.Resources.Pids > 0 {
+			finalRes.Pids = req.Resources.Pids
+		}
+	}
+	if finalCmd == "" {
+		return nil, errors.New("command cannot be empty after merge")
+	}
+	if finalRes.MemoryMB <= 0 {
+		return nil, fmt.Errorf("invalid memory limit: must be > 0")
+	}
+	if finalRes.Pids <= 0 {
+		return nil, fmt.Errorf("invalid pids limit: must be > 0")
+	}
+	if finalRes.CPU <= 0 || finalRes.CPU > 100 {
+		return nil, fmt.Errorf("invalid cpu limit: must be between 1–100")
+	}
+
 	id, err := m.generateSandboxID()
 	if err != nil {
 		return nil, err
@@ -95,8 +150,9 @@ func (m *Manager) CreateSandbox(req CreateSandboxRequest) (*sandbox.Sandbox, err
 	sb := &sandbox.Sandbox{
 		ID:         id,
 		State:      sandbox.CREATED,
-		Command:    req.Command,
-		Args:       req.Args,
+		Command:    finalCmd,
+		Args:       finalArgs,
+		Resources:  finalRes,
 		RootFSPath: rootFSPath,
 		LogPath:    logPath,
 		BundlePath: absBundlePath,
