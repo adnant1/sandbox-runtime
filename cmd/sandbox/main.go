@@ -3,16 +3,14 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"sandbox-runtime/internal/cgroups"
 	"sandbox-runtime/internal/cli"
-	"sandbox-runtime/internal/config"
 	"sandbox-runtime/internal/initproc"
-	"sandbox-runtime/internal/manager"
-	"sandbox-runtime/internal/state"
 )
 
-// Main entrypoint into the runtime
+// Unix domain socket used by sandboxd
+const socketPath = "/run/sandboxd.sock"
+
+// Main entrypoint into the sandbox CLI
 func main() {
 	// Internal bootstrap path.
 	//
@@ -36,16 +34,10 @@ func main() {
 		}
 		return
 	}
-	absRootDir, err := filepath.Abs("./sandbox-data")
-	if err != nil {
-		panic(fmt.Sprintf("failed to resolve root directory: %v", err))
+
+	cli := cli.New(socketPath)
+	if err := cli.Run(os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "cli error: %v\n", err)
+		os.Exit(1)
 	}
-	cfg := config.Config{
-		RootDir: absRootDir,
-	}
-	store := state.New()
-	cg := cgroups.New("/sys/fs/cgroup")
-	mgr := manager.New(store, cg, cfg)
-	cli := cli.New(mgr)
-	cli.Run(os.Args[1:])
 }
