@@ -160,7 +160,7 @@ sudo ./sandbox list
 ### Inspect sandbox
 
 ```
-sudo ./sandbox inspect <id>
+sudo ./sandbox inspect <id> [--logs]
 ```
 
 ### Stop sandbox
