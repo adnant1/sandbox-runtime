@@ -13,6 +13,7 @@ import (
 	"sandbox-runtime/internal/namespaces"
 	"sandbox-runtime/internal/sandbox"
 	"sandbox-runtime/internal/state"
+	"syscall"
 	"time"
 )
 
@@ -327,37 +328,90 @@ func (m *Manager) StartSandbox(id string) (*sandbox.Sandbox, error) {
 	}
 
 	// Every child must be waited on, otherwise there's a risk of a zombie process
-	go func(s *sandbox.Sandbox, c *exec.Cmd, f *os.File) {
-		defer f.Close()
-		waitErr := c.Wait()
+	go m.superviseExecution(sb.ID, cmd, logFile)
+	return sb, nil
+}
 
+// superviseExecution is the execution control loop for running a sandbox.
+//
+// It is responsible for supervising the lifecycle of a sandbox process after
+// it has been sucessfully started and transitioned to RUNNING.
+func (m *Manager) superviseExecution(id string, cmd *exec.Cmd, logFile *os.File) {
+	defer logFile.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	sb, err := m.store.Get(id)
+	if err != nil {
+		// If we can't load state, we still must reap the process
+		<-done
+		return
+	}
+
+	timeout := time.Duration(sb.Resources.TimeoutSec) * time.Second
+	timer := time.NewTimer(timeout)
+
+	// Helper function to finalize the process exit (enforce only a single path succeeds)
+	finalize := func(reason string, waitErr error) {
 		// Re-read the sandbox from the store before updating terminal state.
 		// This avoids mutating a stale pointer just in case other manager operations
 		// modify the sandbox in the meantime.
-		curr, getErr := m.store.Get(s.ID)
+		curr, getErr := m.store.Get(id)
 		if getErr != nil {
 			// Fail silently here because the process has already exited and been reaped.
 			return
 		}
 
+		if curr.State != sandbox.RUNNING {
+			return
+		}
 		curr.State = sandbox.EXITED
 		curr.FinishedAt = time.Now()
 		curr.ExitCode = exitCodeFromWaitErr(waitErr)
-		curr.Err = ""
-
-		// Rare event: Wait failed with a non ExitError
-		if waitErr != nil {
-			var exitErr *exec.ExitError
-			if !errors.As(waitErr, &exitErr) {
-				curr.Err = fmt.Sprintf("wait error: %v", waitErr)
-			}
+		switch reason {
+		case "timeout":
+			curr.Err = "timeout exceeded"
+		case "wait-error":
+			curr.Err = fmt.Sprintf("wait error: %v", waitErr)
+		default:
+			curr.Err = ""
 		}
 
-		// Best effort update the sandbox since the process is already gone
 		_ = m.store.Update(curr)
-	}(sb, cmd, logFile)
+	}
 
-	return sb, nil
+	select {
+	// Process exits normally
+	case waitErr := <-done:
+		timer.Stop()
+
+		var exitErr *exec.ExitError
+		if waitErr != nil && !errors.As(waitErr, &exitErr) {
+			finalize("wait-error", waitErr)
+		}
+		finalize("completed", waitErr)
+
+	// Process timeout fires
+	case <-timer.C:
+		// Send a sigterm and let the process finish off cleanly
+		// If the process is still alive after a given grace period -> force kill
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		graceTimer := time.NewTimer(2 * time.Second)
+
+		select {
+		case waitErr := <-done:
+			finalize("terminated", waitErr)
+
+		// Grace period expired
+		case <-graceTimer.C:
+			_ = cmd.Process.Kill()
+			waitErr := <-done
+			finalize("timeout", waitErr)
+		}
+	}
 }
 
 // exitCodeFromWaitErr extracts a process exit code from cmd.Wait()
