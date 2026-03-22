@@ -56,7 +56,8 @@ cat > "$CONFIG_PATH" <<EOF
   "resources": {
     "cpu": 50,
     "memoryMB": 100,
-    "pids": 64
+    "pids": 64,
+    "timeoutSec": 60
   }
 }
 EOF
