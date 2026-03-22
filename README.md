@@ -1,4 +1,4 @@
-# Secure Sandbox Runtime
+# Secure Sandbox
 
 A runtime for secure, isolated workload execution, featuring a custom control plane, Linux namespace isolation, cgroup-based resource enforcement, and syscall-level sandboxing.
 
@@ -6,7 +6,7 @@ A runtime for secure, isolated workload execution, featuring a custom control pl
 
 ## Overview
 
-Secure Sandbox Runtime provides a minimal, security-focused execution environment for running workloads in isolated sandboxes on a single host. The system is designed around strict isolation boundaries, explicit control plane ownership, and defense-in-depth mechanisms.
+This runtime provides a minimal, security-focused execution environment for running workloads in isolated sandboxes on a single host. The system is designed around strict isolation boundaries, explicit control plane ownership, and in-depth defense mechanisms.
 
 The runtime leverages native Linux primitives including namespaces, cgroups, and seccomp to constrain process behavior and reduce the attack surface of executed workloads.
 
@@ -89,8 +89,9 @@ The runtime enforces isolation using native Linux primitives:
 
 ### Namespaces
 
-* PID namespace
 * Mount namespace
+* PID namespace
+* UTS namespace
 * Extensible to network and user namespaces
 
 ### Cgroups
@@ -178,12 +179,48 @@ sudo ./sandbox shutdown
 
 ## Bundle Format
 
-A bundle defines the filesystem and execution configuration required for a sandbox.
+A bundle defines the filesystem and execution configuration required for a sandbox. Each bundle must include a required `config.json` file and a `rootfs/` directory containing the filesystem that will become the sandbox root.
+
+### Expected Structure
 
 ```
 bundle/
+  config.json
   rootfs/
-  config
+    bin/
+    proc/
+    tmp/
+    dev/
 ```
 
-The `config` file is required and defines the default command, arguments, and resource constraints for the workload. These values may be overridden at runtime via CLI flags.
+The runtime expects `rootfs/` to contain at least a **minimal Linux filesystem** sufficient enough to execute the configured workload after `pivot_root` is applied.
+
+At minimum, the bundle should provide:
+
+* `bin/` for executables needed inside the sandbox
+* `proc/` as a mount point for `/proc`
+* `tmp/` for temporary files
+* `dev/` for basic device-related paths used by the environment
+
+The runtime does not require a full distribution image, but it does expect the root filesystem to be **self-sufficient for the command being executed**.
+
+### Configuration File
+
+`config.json` is required and defines the default workload entrypoint and resource constraints.
+
+Example:
+
+```json
+{
+  "command": "ls",
+  "args": ["-l"],
+  "resources": {
+    "cpu": 50,
+    "memoryMB": 100,
+    "pids": 64,
+    "timeoutSec": 30
+  }
+}
+```
+
+The values in `config.json` act as the default execution contract for the bundle. Command, arguments, and resource settings may be overridden at runtime through flags via the CLI.
