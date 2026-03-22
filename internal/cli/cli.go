@@ -167,6 +167,7 @@ func (c *CLI) inspectCommand(args []string) error {
 		fmt.Printf("Finished At: %s\n", sb.FinishedAt)
 	}
 	if sb.State == "EXITED" {
+		fmt.Printf("Exit Code: %d\n", *sb.ExitCode)
 		fmt.Printf("Exit Reason: %s\n", sb.ExitReason)
 	}
 	return nil
