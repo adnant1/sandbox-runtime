@@ -6,9 +6,10 @@ package api
 // This is intentionally decoupled from the internal sandbox.ResourceSpec
 // to avoid leaking runtime details.
 type ResourceOverrides struct {
-	MemoryMB int `json:"memoryMB,omitempty"`
-	CPU      int `json:"cpu,omitempty"`
-	Pids     int `json:"pids,omitempty"`
+	MemoryMB   int `json:"memoryMB,omitempty"`
+	CPU        int `json:"cpu,omitempty"`
+	Pids       int `json:"pids,omitempty"`
+	TimeoutSec int `json:"timeoutSec,omitempty"`
 }
 
 // CreateSandboxRequest represents the request body for: POST /sandboxes

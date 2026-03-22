@@ -69,7 +69,7 @@ func (c *CLI) Run(args []string) error {
 func (c *CLI) runCommand(args []string) error {
 	req, err := parseRunArgs(args)
 	if err != nil {
-		fmt.Println("usage: sandbox run <bundlePath> [command] [args...] [--memory=N] [--cpu=N] [--pids=N]")
+		fmt.Println("usage: sandbox run <bundlePath> [command] [args...] [--memory=N] [--cpu=N] [--pids=N] [--timeout=N]")
 		return nil
 	}
 
@@ -203,7 +203,8 @@ func (c *CLI) shutdownCommand() error {
 func isFlagKV(a string) bool {
 	return strings.HasPrefix(a, "--memory=") ||
 		strings.HasPrefix(a, "--cpu=") ||
-		strings.HasPrefix(a, "--pids=")
+		strings.HasPrefix(a, "--pids=") ||
+		strings.HasPrefix(a, "--timeout=")
 }
 
 // parseRunArgs parses CLI input into an API request.
@@ -239,10 +240,11 @@ func parseRunArgs(args []string) (api.CreateSandboxRequest, error) {
 
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 
-	var mem, cpu, pids int
+	var mem, cpu, pids, timeout int
 	fs.IntVar(&mem, "memory", 0, "")
 	fs.IntVar(&cpu, "cpu", 0, "")
 	fs.IntVar(&pids, "pids", 0, "")
+	fs.IntVar(&timeout, "timeout", 0, "")
 
 	if err := fs.Parse(flagArgs); err != nil {
 		return api.CreateSandboxRequest{}, err
@@ -260,9 +262,10 @@ func parseRunArgs(args []string) (api.CreateSandboxRequest, error) {
 		Command:    cmd,
 		Args:       cmdArgs,
 		Resources: api.ResourceOverrides{
-			MemoryMB: mem,
-			CPU:      cpu,
-			Pids:     pids,
+			MemoryMB:   mem,
+			CPU:        cpu,
+			Pids:       pids,
+			TimeoutSec: timeout,
 		},
 	}, nil
 }

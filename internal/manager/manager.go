@@ -17,6 +17,7 @@ import (
 )
 
 const maxIDSamplingAttempts = 10
+const defaultTimeoutSec = 120
 
 var ErrInvalidStateTransition = errors.New("invalid sandbox state transition")
 
@@ -126,6 +127,9 @@ func (m *Manager) CreateSandbox(req CreateSandboxRequest) (*sandbox.Sandbox, err
 		if req.Resources.Pids > 0 {
 			finalRes.Pids = req.Resources.Pids
 		}
+		if req.Resources.TimeoutSec > 0 {
+			finalRes.TimeoutSec = req.Resources.TimeoutSec
+		}
 	}
 	if finalCmd == "" {
 		return nil, errors.New("command cannot be empty after merge")
@@ -138,6 +142,9 @@ func (m *Manager) CreateSandbox(req CreateSandboxRequest) (*sandbox.Sandbox, err
 	}
 	if finalRes.CPU <= 0 || finalRes.CPU > 100 {
 		return nil, fmt.Errorf("invalid cpu limit: must be between 1–100")
+	}
+	if finalRes.TimeoutSec <= 0 {
+		finalRes.TimeoutSec = defaultTimeoutSec // Default to 2 minutes if not set or invalid
 	}
 
 	id, err := m.generateSandboxID()
