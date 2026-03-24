@@ -4,6 +4,37 @@ A runtime for secure, isolated workload execution, featuring a custom control pl
 
 ---
 
+## Requirements
+
+This project relies on Linux kernel primitives and libseccomp via CGO.
+
+You must have:
+
+* **Linux host environment** (native or VM)
+* **Go installed** (matching your module version)
+* **CGO enabled**
+* **C toolchain** (e.g., `gcc`, `build-essential`)
+* **libseccomp development library**
+
+### Setup
+
+Ensure CGO is enabled:
+
+```
+go env -w CGO_ENABLED=1
+```
+
+Install required system packages (Debian/Ubuntu example):
+
+```
+sudo apt-get update
+sudo apt-get install -y build-essential pkg-config libseccomp-dev
+```
+
+> Note: This runtime depends on Linux-only features such as namespaces, cgroups, and seccomp. It will not run on macOS or Windows without a Linux VM.
+
+---
+
 ## Overview
 
 This runtime provides a minimal, security-focused execution environment for running workloads in isolated sandboxes on a single host. The system is designed around strict isolation boundaries, explicit control plane ownership, and in-depth defense mechanisms.
