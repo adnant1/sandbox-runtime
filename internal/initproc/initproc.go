@@ -1,9 +1,12 @@
 package initproc
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sandbox-runtime/internal/sandbox"
+	"sandbox-runtime/internal/seccomp"
 	"strings"
 	"syscall"
 )
@@ -64,6 +67,19 @@ func Run(args []string) error {
 	// Hostname isolation
 	if err := syscall.Sethostname([]byte(sandboxID)); err != nil {
 		return fmt.Errorf("init: failed to set hostname: %w", err)
+	}
+
+	// Apply seccomp
+	raw := os.Getenv("SANDBOX_SECCOMP")
+	if raw == "" {
+		return fmt.Errorf("init: missing seccomp config")
+	}
+	var cfg sandbox.SeccompConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return fmt.Errorf("init: invalid seccomp config: %w", err)
+	}
+	if err := seccomp.Apply(cfg); err != nil {
+		return fmt.Errorf("init: apply seccomp: %w", err)
 	}
 
 	// Resolve the command ourselves, assuming our filesystem is correct

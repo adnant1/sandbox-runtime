@@ -13,6 +13,13 @@ const (
 	ExitReasonError     ExitReason = "Error"
 )
 
+type SeccompAction string
+
+const (
+	SeccompActionErrno SeccompAction = "errno"
+	SeccompActionKill  SeccompAction = "kill"
+)
+
 type SandboxState int
 
 const (
@@ -51,6 +58,20 @@ type ResourceSpec struct {
 	TimeoutSec int
 }
 
+// SeccompConfig defines the syscall filtering policy applied to a sandbox.
+// It specifies which syscalls are allowed and how blocked syscalls are handled.
+type SeccompConfig struct {
+	DefaultAction   SeccompAction
+	AllowedSyscalls []string
+}
+
+// SecurityConfig defines the security policies applied to a sandbox.
+// It groups all isolation and restriction mechanisms enforced at runtime.
+// Currently includes one mechanism, but designed to be extended with additional mechanisms later.
+type SecurityConfig struct {
+	Seccomp SeccompConfig
+}
+
 // Sandbox represents a unit of isolated workload execution along with its lifecycle state and associated metadata.
 type Sandbox struct {
 	ID         string
@@ -59,6 +80,7 @@ type Sandbox struct {
 	Command    string
 	Args       []string
 	Resources  ResourceSpec
+	Security   SecurityConfig
 	RootFSPath string
 	LogPath    string
 	BundlePath string

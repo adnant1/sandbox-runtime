@@ -158,12 +158,16 @@ func (m *Manager) CreateSandbox(req CreateSandboxRequest) (*sandbox.Sandbox, err
 	if err := os.MkdirAll(sandboxDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create sandbox directory: %w", err)
 	}
+	security := sandbox.SecurityConfig{
+		Seccomp: m.buildSeccompConfig(),
+	}
 	sb := &sandbox.Sandbox{
 		ID:         id,
 		State:      sandbox.CREATED,
 		Command:    finalCmd,
 		Args:       finalArgs,
 		Resources:  finalRes,
+		Security:   security,
 		RootFSPath: rootFSPath,
 		LogPath:    logPath,
 		BundlePath: absBundlePath,
@@ -315,6 +319,17 @@ func (m *Manager) StartSandbox(id string) (*sandbox.Sandbox, error) {
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Dir = sb.BundlePath
+	data, err := json.Marshal(sb.Security.Seccomp)
+	if err != nil {
+		return m.failSandbox(
+			sb,
+			fmt.Sprintf("failed to marshal seccomp config: %v", err),
+			err,
+			"marshal seccomp config for sandbox %q: %w",
+			nil,
+		)
+	}
+	cmd.Env = append(os.Environ(), "SANDBOX_SECCOMP="+string(data))
 	if err := m.ns.Configure(cmd, sb); err != nil {
 		return m.failSandbox(sb, fmt.Sprintf("failed to configure namespaces: %v", err), err, "configure namespaces for sandbox %q: %w", nil)
 	}
@@ -452,6 +467,190 @@ func (m *Manager) superviseExecution(id string, cmd *exec.Cmd, logFile *os.File)
 			waitErr := <-done
 			finalize("timeout", waitErr)
 		}
+	}
+}
+
+// buildSeccompConfig constructs the default seccomp policy for a sandbox.
+func (m *Manager) buildSeccompConfig() sandbox.SeccompConfig {
+	// Process / execution
+	process := []string{
+		"clone",
+		"fork",
+		"vfork",
+		"execve",
+		"execveat",
+		"exit",
+		"exit_group",
+		"wait4",
+		"waitid",
+		"set_tid_address",
+		"setpgid",
+		"getpid",
+		"getppid",
+		"gettid",
+	}
+	// Memory management
+	memory := []string{
+		"brk",
+		"mmap",
+		"mmap2",
+		"munmap",
+		"mremap",
+		"mprotect",
+		"msync",
+		"mincore",
+		"madvise",
+	}
+	// File descriptiors / polling
+	fd := []string{
+		"dup",
+		"dup2",
+		"dup3",
+		"pipe",
+		"pipe2",
+		"poll",
+		"ppoll",
+		"select",
+		"pselect6",
+		"epoll_create",
+		"epoll_create1",
+		"epoll_ctl",
+		"epoll_wait",
+		"epoll_pwait",
+	}
+	// Filesystem
+	fs := []string{
+		"open",
+		"openat",
+		"close",
+		"read",
+		"write",
+		"pread64",
+		"pwrite64",
+		"readv",
+		"writev",
+		"lseek",
+		"stat",
+		"fstat",
+		"lstat",
+		"newfstatat",
+		"statx",
+		"access",
+		"faccessat",
+		"faccessat2",
+		"getdents",
+		"getdents64",
+		"readlink",
+		"readlinkat",
+		"rename",
+		"renameat",
+		"renameat2",
+		"mkdir",
+		"mkdirat",
+		"rmdir",
+		"link",
+		"linkat",
+		"unlink",
+		"unlinkat",
+		"symlink",
+		"symlinkat",
+		"chmod",
+		"fchmod",
+		"fchmodat",
+		"utime",
+		"utimensat",
+		"truncate",
+		"ftruncate",
+		"statfs",
+		"fstatfs",
+		"sync",
+		"syncfs",
+		"fsync",
+		"fdatasync",
+		"flock",
+		"fallocate",
+		"getcwd",
+		"chdir",
+		"fchdir",
+	}
+	// Signals
+	signals := []string{
+		"rt_sigaction",
+		"rt_sigprocmask",
+		"rt_sigreturn",
+		"rt_sigpending",
+		"rt_sigtimedwait",
+		"rt_sigqueueinfo",
+		"rt_tgsigqueueinfo",
+		"sigaltstack",
+	}
+	// Time / timers
+	time := []string{
+		"nanosleep",
+		"clock_gettime",
+		"clock_getres",
+		"clock_nanosleep",
+		"gettimeofday",
+		"setitimer",
+		"getitimer",
+		"timer_create",
+		"timer_settime",
+		"timer_gettime",
+		"timer_getoverrun",
+		"timer_delete",
+		"time",
+	}
+	// System info
+	sys := []string{
+		"uname",
+		"sysinfo",
+		"getrlimit",
+		"setrlimit",
+		"prlimit64",
+		"umask",
+	}
+	// IO extensions
+	io := []string{
+		"ioctl",
+		"preadv",
+		"pwritev",
+		"preadv2",
+		"pwritev2",
+	}
+	// Thread-local / context
+	thrd := []string{
+		"set_thread_area",
+		"setfsuid",
+		"setfsgid",
+	}
+	// Misc
+	misc := []string{
+		"arch_prctl",
+		"prctl",
+		"futex",
+		"set_robust_list",
+		"get_robust_list",
+		"sched_yield",
+		"sched_getaffinity",
+		"getcpu",
+		"getrandom",
+	}
+
+	allowed := []string{}
+	allowed = append(allowed, process...)
+	allowed = append(allowed, memory...)
+	allowed = append(allowed, fd...)
+	allowed = append(allowed, fs...)
+	allowed = append(allowed, signals...)
+	allowed = append(allowed, time...)
+	allowed = append(allowed, sys...)
+	allowed = append(allowed, io...)
+	allowed = append(allowed, thrd...)
+	allowed = append(allowed, misc...)
+
+	return sandbox.SeccompConfig{
+		DefaultAction:   sandbox.SeccompActionErrno,
+		AllowedSyscalls: allowed,
 	}
 }
 
